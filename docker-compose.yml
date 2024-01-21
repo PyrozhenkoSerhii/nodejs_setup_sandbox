@@ -1,0 +1,35 @@
+version: "3"
+
+services:
+  server_nodejs_setup:
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    container_name: server_nodejs_setup
+    command: npm run start
+    restart: "no"
+    volumes:
+      - ./server:/root/app/server:ro
+    ports:
+      # <host_machine>:<inside_of_docker> 
+      - 3000:3000
+    env_file:
+      - ./environment/.env
+
+  mongodb_setup:
+    image: 'bitnami/mongodb:latest'
+    container_name: mongodb_setup
+    env_file:
+      - ./environment/.env
+    restart: "no"
+    ports:
+      - 27019:27017
+    environment:
+      - ALLOW_EMPTY_PASSWORD=no
+      - MONGODB_ROOT_USER=${MONGODB_ROOT_USER}
+      - MONGODB_ROOT_PASSWORD=${MONGODB_ROOT_PASSWORD}
+      - MONGODB_USERNAME=${MONGODB_USERNAME}
+      - MONGODB_PASSWORD=${MONGODB_PASSWORD}
+      - MONGODB_DATABASE=${MONGODB_DATABASE}
+    volumes:
+      - ./data/mongodb:/bitnami/mongodb
