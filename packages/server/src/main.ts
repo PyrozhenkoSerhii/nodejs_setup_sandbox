@@ -2,12 +2,19 @@ import "../../aliases";
 
 import express from "express";
 
-import { a } from "@shared/configs";
+import { coreConfig } from "@shared/configs";
+import { Logger } from "@shared/utils";
 
-console.log(a);
+class Main {
+  private logger = new Logger(Main.name);
 
-const app = express();
+  constructor() {
+    const app = express();
 
-app.listen(process.env.PORT, () => {
-  console.log("express is running");
-});
+    app.listen(coreConfig.port, () => {
+      this.logger.success(`Express is running on ${coreConfig.port} port`);
+    });
+  }
+}
+
+new Main();

@@ -15,6 +15,7 @@ services:
       - 8001:8000
     env_file:
       - ./environment/.env.default
+      - ./environment/.env.server
 
   mongodb_setup:
     image: 'bitnami/mongodb:latest'
