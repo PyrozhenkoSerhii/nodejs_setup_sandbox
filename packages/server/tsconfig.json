@@ -1,5 +1,6 @@
 {
-  "include": ["./server/**/*.ts"],
+  "include": ["./src/**/*.ts", "../aliases.ts"],
+  "references": [{ "path": "../shared/tsconfig.json" }],
   "compilerOptions": {
     "baseUrl": ".",
     "moduleResolution": "node",
@@ -9,6 +10,9 @@
     "strict": true,
     "outDir": "./dist",
     "skipLibCheck": true,
+    "paths": {
+      "@shared/*": ["../shared/*"]
+    },
   },
   "exclude": ["node_modules"],
 }

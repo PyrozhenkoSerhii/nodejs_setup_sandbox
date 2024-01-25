@@ -1,0 +1,3 @@
+/packages/aliases.ts
+**/node_modules/**
+data/**

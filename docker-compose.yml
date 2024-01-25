@@ -1,26 +1,26 @@
 version: "3"
 
 services:
-  server_nodejs_setup:
+  server:
     build:
       context: .
-      dockerfile: ./Dockerfile
-    container_name: server_nodejs_setup
-    command: npm run start
+      dockerfile: ./docker/Dockerfile.server
+    container_name: server
+    command: npm run start:server
     restart: "no"
     volumes:
-      - ./server:/root/app/server:ro
+      - ./packages/server:/root/app/packages/server:ro
+      - ./packages/shared:/root/app/packages/shared:ro
     ports:
-      # <host_machine>:<inside_of_docker> 
-      - 3000:3000
+      - 8001:8000
     env_file:
-      - ./environment/.env
+      - ./environment/.env.default
 
   mongodb_setup:
     image: 'bitnami/mongodb:latest'
     container_name: mongodb_setup
     env_file:
-      - ./environment/.env
+      - ./environment/.env.default
     restart: "no"
     ports:
       - 27019:27017

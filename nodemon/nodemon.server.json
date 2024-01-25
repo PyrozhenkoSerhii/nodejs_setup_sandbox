@@ -1,0 +1,5 @@
+{
+  "ext": ".ts",
+  "watch": ["./packages/server", "./packages/shared"],
+  "exec": "ts-node"
+}

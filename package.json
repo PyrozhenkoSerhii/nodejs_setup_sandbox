@@ -1,13 +1,17 @@
 {
   "name": "nodejs_setup",
   "scripts": {
-    "up": "docker compose --env-file ./environment/.env up --build -d",
+    "up": "docker compose --env-file ./environment/.env.default up --build -d",
     "log": "docker logs -f --since 10m server_nodejs_setup",
-    "start": "nodemon --legacy-watch ./server/main.ts"
+    "start:server": "nodemon --legacy-watch --config ./nodemon/nodemon.server.json  --project ./packages/server/tsconfig.json ./packages/server/src/main.ts",
+    "build:server": "tsc -b ./packages/server/tsconfig.json",
+    "prod:server": "node ./packages/server/dist/server/src/main.js",
+    "build": "npm run build:server"
   },
   "dependencies": {
     "dotenv": "^16.3.2",
     "express": "^4.18.2",
+    "module-alias": "^2.2.3",
     "mongoose": "^8.1.0"
   },
   "devDependencies": {

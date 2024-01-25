@@ -1,0 +1,13 @@
+FROM node:18-alpine
+USER root
+WORKDIR /root/app
+
+ENV DEBIAN_FRONTEND noninteractive
+
+COPY package.json .
+RUN npm install
+
+COPY ./nodemon ./nodemon
+COPY ./packages/aliases.ts ./packages/aliases.ts
+COPY ./packages/server ./packages/server
+COPY ./packages/shared ./packages/shared
