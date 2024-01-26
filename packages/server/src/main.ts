@@ -3,6 +3,7 @@ import "../../aliases";
 import express from "express";
 
 import { coreConfig } from "@shared/configs";
+import { PATH } from "@shared/constants";
 import { EssentialsService, MongoService } from "@shared/services";
 import { Logger } from "@shared/utils";
 
@@ -17,6 +18,7 @@ class Main {
       await this.essentials.connect();
 
       const app = express();
+      app.use(`/${PATH.HEALTH}`, this.onHealth);
 
       app.listen(coreConfig.port, () => {
         this.logger.success(`Express is running on ${coreConfig.port} port`);
@@ -27,9 +29,19 @@ class Main {
     }
   };
 
+  // TODO: add types
+  public onHealth = async (_: any, res: any) => {
+    const { isHealthy, extra } = await this.essentials.health();
+    if (isHealthy) {
+      return res.status(200).send({ message: `${coreConfig.serverName} service is healthy` });
+    }
+
+    return res.status(500).send({ message: `${coreConfig.serverName} service id DOWN`, extra });
+  };
+
   public checkHealthInterval = () => {
     setInterval(async () => {
-      this.logger.info("/health response: ", await this.essentials.health());
+      this.logger.info("/health response: ");
     }, 60000);
   };
 }

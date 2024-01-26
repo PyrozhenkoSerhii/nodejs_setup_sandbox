@@ -1,4 +1,4 @@
-import { IEssentialService, IHealthSummary, IServiceHealth } from "@shared/interfaces";
+import { IEssentialService, IHealthSummary, IServiceHealthResponse, IServiceHealthSummaryItem } from "@shared/interfaces";
 import { Logger } from "@shared/utils";
 
 export class EssentialsService implements IEssentialService {
@@ -26,7 +26,7 @@ export class EssentialsService implements IEssentialService {
       successful: results.filter((r) => r.status === "fulfilled").length,
       failed: results.filter((r) => r.status === "rejected").length,
       failedServices: results
-        .map<IServiceHealth>((r, index) => ({
+        .map<IServiceHealthSummaryItem>((r, index) => ({
           isHealthy: r.status === "fulfilled",
           serviceName: this.services[index].name,
           message: r.status === "rejected" ? r.reason.message : undefined,
@@ -41,18 +41,18 @@ export class EssentialsService implements IEssentialService {
     }
   };
 
-  public health = async () => {
+  public health = async (): Promise<IServiceHealthResponse> => {
     const summary = await this.createHealthSummary();
     this.logger.debug(summary);
 
-    return !summary.unhealthyCount;
+    return { isHealthy: !summary.unhealthyCount, extra: summary };
   };
 
   private createHealthSummary = async (): Promise<IHealthSummary> => {
     let unhealthyCount = 0;
 
-    const details = await Promise.all(this.services.map<Promise<IServiceHealth>>(async (s) => {
-      const isHealthy = await s.health();
+    const details = await Promise.all(this.services.map<Promise<IServiceHealthSummaryItem>>(async (s) => {
+      const { isHealthy } = await s.health();
       if (!isHealthy) unhealthyCount++;
 
       return {

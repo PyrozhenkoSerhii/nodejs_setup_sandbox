@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 
 import { getMongoConfig } from "@shared/configs";
-import { IEssentialService, IMongoConfig } from "@shared/interfaces";
+import { IEssentialService, IMongoConfig, IServiceHealthResponse } from "@shared/interfaces";
 import { Logger, retry } from "@shared/utils";
 
 export class MongoService implements IEssentialService {
@@ -27,8 +27,8 @@ export class MongoService implements IEssentialService {
     this.logger.info("Got the MongoDB config: ", { user, host, port, db });
   }
 
-  public health = async () => {
-    return this.isHealthy;
+  public health = async (): Promise<IServiceHealthResponse> => {
+    return { isHealthy: this.isHealthy };
   };
 
   public connect = async () => {
