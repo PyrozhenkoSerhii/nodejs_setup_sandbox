@@ -68,10 +68,6 @@ export class Logger {
     this.logMessage("info", ...messages);
   }
 
-  public log(...messages: any[]) {
-    this.logMessage("info", ...messages);
-  }
-
   public success(...messages: any[]) {
     const prefixedMessages = this.prefix ? [this.prefix, ...messages] : messages;
 

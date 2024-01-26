@@ -17,9 +17,9 @@ services:
       - ./environment/.env.default
       - ./environment/.env.server
 
-  mongodb_setup:
+  mongodb:
     image: 'bitnami/mongodb:latest'
-    container_name: mongodb_setup
+    container_name: mongodb
     env_file:
       - ./environment/.env.default
     restart: "no"

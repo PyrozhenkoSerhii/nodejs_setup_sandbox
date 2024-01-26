@@ -2,10 +2,11 @@
   "name": "nodejs_setup",
   "scripts": {
     "up": "docker compose --env-file ./environment/.env.default up --build -d",
-    "log": "docker logs -f --since 10m server_nodejs_setup",
+    "down": "docker compose --env-file ./environment/.env.default down",
     "start:server": "nodemon --legacy-watch --config ./nodemon/nodemon.server.json  --project ./packages/server/tsconfig.json ./packages/server/src/main.ts",
     "build:server": "tsc -b ./packages/server/tsconfig.json",
     "prod:server": "node ./packages/server/dist/server/src/main.js",
+    "logs:server": "docker logs -f --since 10m server",
     "build": "npm run build:server"
   },
   "dependencies": {
