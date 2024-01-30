@@ -19,6 +19,7 @@ export const coreConfig: ICoreConfig = {
   port: +tryGetEnv("PORT"),
   env: getNodeEnvValue(),
   serverName: tryGetEnv("SERVER_NAME"),
+  allowedNodeIp: tryGetEnv("ALLOWED_NODE_IP", "127.0.0.1"),
 };
 
 console.log("[coreConfig]", {
@@ -26,4 +27,5 @@ console.log("[coreConfig]", {
   env: coreConfig.env,
   serverName: coreConfig.serverName,
   nodeJS: process.version,
+  allowedNodeIp: coreConfig.allowedNodeIp,
 });

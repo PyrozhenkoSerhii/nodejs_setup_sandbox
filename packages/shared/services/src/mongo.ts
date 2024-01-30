@@ -31,8 +31,7 @@ export class MongoService implements IEssentialService {
 
   public connect = async () => {
     try {
-      mongoose.connection.on("connected", this.onConnected);
-      mongoose.connection.on("disconnected", this.onDisconnected);
+      this.subscribeToEvents();
 
       await retry(
         5,
@@ -43,7 +42,7 @@ export class MongoService implements IEssentialService {
           this.connectedOnce = true;
         },
         () => {
-          this.logger.warn("Retrying to connect to the MongoDB");
+          this.logger.warn("Reconnection attempt");
         },
       );
     } catch (error) {
@@ -51,9 +50,27 @@ export class MongoService implements IEssentialService {
     }
   };
 
+  public disconnect = async () => {
+    try {
+      this.clearConnection();
+    } catch (error) {
+      this.handleThrowError("Error while disconnecting");
+    }
+  };
+
+  private subscribeToEvents = () => {
+    mongoose.connection.on("connected", this.onConnected);
+    mongoose.connection.on("disconnected", this.onDisconnected);
+  };
+
+  private unsubscribeFromEvents = () => {
+    mongoose.connection.off("connected", this.onConnected);
+    mongoose.connection.off("disconnected", this.onDisconnected);
+  };
+
   private onConnected = () => {
     this.isHealthy = true;
-    this.logger.info("Connected event");
+    this.logger.info("[onConnected] event");
   };
 
   private onDisconnected = () => {
@@ -65,7 +82,20 @@ export class MongoService implements IEssentialService {
      * and if succeed the "connected" event will be called and the service will healthy again
      */
     this.isHealthy = false;
-    this.logger.error("Disconnected event");
+    this.logger.error("[onDisconnected] event");
+  };
+
+  private clearConnection = () => {
+    try {
+      this.isHealthy = false;
+      this.unsubscribeFromEvents();
+      mongoose.disconnect();
+    } catch (error) {
+      this.handleThrowError("[clearConnection] ERROR: ", error);
+    } finally {
+      this.connectedOnce = false;
+      this.logger.info("[clearConnection] Ensure closed connection");
+    }
   };
 
   private handleThrowError(message: string, extra?: any): void {

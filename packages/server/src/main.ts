@@ -1,11 +1,11 @@
 import "../../aliases";
 
-import express from "express";
+import express, { Request, Response } from "express";
 
 import { coreConfig } from "@shared/configs";
 import { PATH } from "@shared/constants";
 import { EssentialsService, MongoService, RabbitMqService } from "@shared/services";
-import { Logger } from "@shared/utils";
+import { Logger, checkRequestSource } from "@shared/utils";
 
 class Main {
   private logger = new Logger(Main.name);
@@ -20,6 +20,7 @@ class Main {
 
       const app = express();
       app.use(`/${PATH.HEALTH}`, this.onHealth);
+      app.use(`/${PATH.SHUTDOWN}`, checkRequestSource, this.onShutdown);
 
       app.listen(coreConfig.port, () => {
         this.logger.success(`Express is running on ${coreConfig.port} port`);
@@ -30,14 +31,24 @@ class Main {
     }
   };
 
-  // TODO: add types
-  public onHealth = async (_: any, res: any) => {
+  public onHealth = async (_: Request, res: Response) => {
     const { isHealthy, extra } = await this.essentials.health();
     if (isHealthy) {
       return res.status(200).send({ message: `${coreConfig.serverName} service is healthy` });
     }
 
-    return res.status(500).send({ message: `${coreConfig.serverName} service id DOWN`, extra });
+    return res.status(500).send({ message: `${coreConfig.serverName} service is down`, extra });
+  };
+
+  public onShutdown = async (_: Request, res: Response) => {
+    try {
+      await this.essentials.disconnect();
+      res.status(200).send({ message: `${coreConfig.serverName} service is stopped` });
+    } catch (error) {
+      res.status(500).send({ message: `Errors while shutting down ${coreConfig.serverName} service` });
+    } finally {
+      process.exit(1);
+    }
   };
 
   public checkHealthInterval = () => {

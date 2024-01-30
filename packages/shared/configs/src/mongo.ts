@@ -6,7 +6,7 @@ export const getMongoConfig = (): IMongoConfig => ({
   user: tryGetEnv("MONGODB_USERNAME"),
   password: tryGetEnv("MONGODB_PASSWORD"),
   host: tryGetEnv("MONGODB_HOST"),
-  port: tryGetEnv("MONGODB_PORT"),
+  port: +tryGetEnv("MONGODB_PORT"),
   db: tryGetEnv("MONGODB_DATABASE"),
   options: {
     // to prevent mongodb from indexing collections automatically

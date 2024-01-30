@@ -10,7 +10,7 @@ interface IBaseServiceConfig {
   host: string;
   password: string;
   user: string;
-  port: string;
+  port: number;
 }
 
 export interface IMongoConfig extends IBaseServiceConfig {
@@ -24,10 +24,12 @@ export interface IRabbitConfig extends IBaseServiceConfig {
   queues: {
     test: string;
   };
+  healthCheckSeconds: number;
 }
 
 export interface ICoreConfig {
   port: number;
   env: ENVIRONMENT;
   serverName: string;
+  allowedNodeIp: string;
 }

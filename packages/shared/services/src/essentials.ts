@@ -41,6 +41,31 @@ export class EssentialsService implements IEssentialService {
     }
   };
 
+  // TODO: any reason to remove services from the list?
+  // if we don't, we can still use health and get "false" for all disconnected services
+  public disconnect = async () => {
+    const results = await Promise.allSettled(this.services.map((s) => s.disconnect()));
+
+    const summary = {
+      total: this.services.length,
+      successful: results.filter((r) => r.status === "fulfilled").length,
+      failed: results.filter((r) => r.status === "rejected").length,
+      failedServices: results
+        .map<IServiceHealthSummaryItem>((r, index) => ({
+          isHealthy: r.status === "fulfilled",
+          serviceName: this.services[index].name,
+          message: r.status === "rejected" ? r.reason.message : undefined,
+        }))
+        .filter((r) => !r.isHealthy),
+    };
+
+    if (summary.failed) {
+      this.logger.error(`[disconnect] ${summary.failed}/${summary.total} services failed to stop gracefully`, summary.failedServices);
+    } else {
+      this.logger.success(`[disconnect] ${summary.successful}/${summary.total} services stopped gracefully`);
+    }
+  };
+
   public health = async (): Promise<IServiceHealthResponse> => {
     const summary = await this.createHealthSummary();
     this.logger.debug(summary);
