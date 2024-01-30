@@ -1,25 +1,23 @@
 import mongoose from "mongoose";
 
 import { getMongoConfig } from "@shared/configs";
-import { IEssentialService, IMongoConfig, IServiceHealthResponse } from "@shared/interfaces";
+import { IEssentialService, IServiceHealthResponse } from "@shared/interfaces";
 import { Logger, retry } from "@shared/utils";
 
 export class MongoService implements IEssentialService {
   private readonly logger = new Logger(MongoService.name, "debug");
 
-  private readonly config: IMongoConfig;
+  public readonly name = MongoService.name;
+
+  private readonly config = getMongoConfig();
 
   private readonly uri: string;
-
-  public readonly name = MongoService.name;
 
   private isHealthy = false;
 
   private connectedOnce = false;
 
   constructor() {
-    this.config = getMongoConfig();
-
     const { user, password, host, port, db } = this.config;
 
     this.uri = `mongodb://${user}:${password}@${host}:${port}/${db}`;
@@ -32,10 +30,10 @@ export class MongoService implements IEssentialService {
   };
 
   public connect = async () => {
-    mongoose.connection.on("connected", this.onConnected);
-    mongoose.connection.on("disconnected", this.onDisconnected);
-
     try {
+      mongoose.connection.on("connected", this.onConnected);
+      mongoose.connection.on("disconnected", this.onDisconnected);
+
       await retry(
         5,
         100, // aside from this 100ms, mongo will wait for "serverSelectionTimeoutMS", see this.config.options

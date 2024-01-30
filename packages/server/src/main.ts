@@ -4,7 +4,7 @@ import express from "express";
 
 import { coreConfig } from "@shared/configs";
 import { PATH } from "@shared/constants";
-import { EssentialsService, MongoService } from "@shared/services";
+import { EssentialsService, MongoService, RabbitMqService } from "@shared/services";
 import { Logger } from "@shared/utils";
 
 class Main {
@@ -15,6 +15,7 @@ class Main {
   public initialize = async () => {
     try {
       this.essentials.addService(new MongoService());
+      this.essentials.addService(new RabbitMqService());
       await this.essentials.connect();
 
       const app = express();

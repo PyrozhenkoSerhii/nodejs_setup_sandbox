@@ -16,6 +16,11 @@ services:
     env_file:
       - ./environment/.env.default
       - ./environment/.env.server
+    networks:
+      - sandbox-network
+    depends_on:
+      - rabbitmq
+      - mongodb
 
   mongodb:
     image: 'bitnami/mongodb:latest'
@@ -34,3 +39,21 @@ services:
       - MONGODB_DATABASE=${MONGODB_DATABASE}
     volumes:
       - ./data/mongodb:/bitnami/mongodb
+    networks:
+      - sandbox-network
+
+  rabbitmq:
+    image: bitnami/rabbitmq:3.11.9
+    restart: "no"
+    container_name: rabbitmq
+    environment:
+      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD}
+    ports:
+      - 15673:15672
+    networks:
+      - sandbox-network
+
+networks:
+  sandbox-network:
+    driver: bridge

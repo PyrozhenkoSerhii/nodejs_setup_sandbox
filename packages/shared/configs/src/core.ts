@@ -1,18 +1,23 @@
-import { tryGetEnv } from "./get-env";
+import { ENVIRONMENT, ICoreConfig } from "@shared/interfaces";
 
-enum ENVIRONMENT {
-  LOCAL="local",
-  DEV="dev",
-  PROD="prod"
-}
+import { tryGetEnv } from "./get-env";
 
 const isValidEnvironment = (value: string): boolean => {
   return Object.values(ENVIRONMENT).includes(value as ENVIRONMENT);
 };
 
-export const coreConfig = {
+const getNodeEnvValue = (): ENVIRONMENT => {
+  const stringValue = tryGetEnv("NODE_ENV", ENVIRONMENT.LOCAL);
+  if (!isValidEnvironment(stringValue)) {
+    throw new Error(`Invalid environment: ${stringValue}`);
+  }
+
+  return stringValue as ENVIRONMENT;
+};
+
+export const coreConfig: ICoreConfig = {
   port: +tryGetEnv("PORT"),
-  env: tryGetEnv("NODE_ENV", ENVIRONMENT.LOCAL),
+  env: getNodeEnvValue(),
   serverName: tryGetEnv("SERVER_NAME"),
 };
 
@@ -22,7 +27,3 @@ console.log("[coreConfig]", {
   serverName: coreConfig.serverName,
   nodeJS: process.version,
 });
-
-if (!isValidEnvironment(coreConfig.env)) {
-  throw new Error(`Invalid environment: ${coreConfig.env}`);
-}
