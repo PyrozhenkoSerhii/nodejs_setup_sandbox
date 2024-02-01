@@ -4,7 +4,6 @@ export interface IServiceHealthResponse {
 }
 
 export interface IEssentialService {
-  name: string;
   connect(): Promise<void>;
   disconnect(): Promise<void>;
   health(): Promise<IServiceHealthResponse>;

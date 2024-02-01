@@ -1,13 +1,11 @@
 import mongoose from "mongoose";
 
 import { getMongoConfig } from "@shared/configs";
-import { IEssentialService, IServiceHealthResponse } from "@shared/interfaces";
+import { ESSENTIAL_SERVICE, IEssentialService, IServiceHealthResponse } from "@shared/interfaces";
 import { Logger, retry } from "@shared/utils";
 
 export class MongoService implements IEssentialService {
-  private readonly logger = new Logger(MongoService.name, "debug");
-
-  public readonly name = MongoService.name;
+  private readonly logger = new Logger(ESSENTIAL_SERVICE.MONGODB, "debug");
 
   private readonly config = getMongoConfig();
 

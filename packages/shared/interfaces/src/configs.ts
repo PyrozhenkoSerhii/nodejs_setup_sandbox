@@ -6,6 +6,11 @@ export enum ENVIRONMENT {
   PROD="prod"
 }
 
+export enum ESSENTIAL_SERVICE {
+  MONGODB="MongoDBService",
+  RABBITMQ="RabbitMqService"
+}
+
 interface IBaseServiceConfig {
   host: string;
   password: string;

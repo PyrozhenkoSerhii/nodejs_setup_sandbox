@@ -1,13 +1,11 @@
 import amqplib, { Options } from "amqplib";
 
 import { coreConfig, getRabbitConfig } from "@shared/configs";
-import { ENVIRONMENT, IEssentialService, IServiceHealthResponse } from "@shared/interfaces";
+import { ENVIRONMENT, ESSENTIAL_SERVICE, IEssentialService, IServiceHealthResponse } from "@shared/interfaces";
 import { Logger, retry } from "@shared/utils";
 
 export class RabbitMqService implements IEssentialService {
-  private readonly logger = new Logger(RabbitMqService.name, "debug");
-
-  public readonly name = RabbitMqService.name;
+  private readonly logger = new Logger(ESSENTIAL_SERVICE.RABBITMQ, "debug");
 
   public readonly config = getRabbitConfig();
 

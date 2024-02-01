@@ -1,74 +1,72 @@
-import { IEssentialService, IHealthSummary, IServiceHealthResponse, IServiceHealthSummaryItem } from "@shared/interfaces";
+import { ESSENTIAL_SERVICE, IEssentialService, IHealthSummary, IServiceHealthResponse, IServiceHealthSummaryItem } from "@shared/interfaces";
 import { Logger } from "@shared/utils";
 
+import { RabbitMqService } from "./rabbit";
+
 export class EssentialsService implements IEssentialService {
-  public readonly name = EssentialsService.name;
+  private static logger = new Logger(EssentialsService.name, "debug");
 
-  private readonly logger = new Logger(EssentialsService.name, "debug");
-
-  private readonly services: IEssentialService[] = [];
+  private static services: { [key in ESSENTIAL_SERVICE]?: IEssentialService } = {};
 
   private initialized = false;
 
-  public addService(service: IEssentialService): void {
-    if (this.initialized) return this.handleThrowError("[addService] Cannot add service after essentials initialization");
+  public addService(service: IEssentialService, name: ESSENTIAL_SERVICE): void {
+    if (this.initialized) return EssentialsService.handleThrowError("[addService] Cannot add service after essentials initialization");
 
-    this.services.push(service);
+    EssentialsService.services[name] = service;
   }
 
   public connect = async () => {
     this.initialized = true;
 
-    const results = await Promise.allSettled(this.services.map((s) => s.connect()));
+    const serviceEntries = Object.entries(EssentialsService.services).filter((entry): entry is [ESSENTIAL_SERVICE, IEssentialService] => entry[1] !== undefined);
+    const results = await Promise.allSettled(serviceEntries.map(([_, service]) => service.connect()));
 
     const summary = {
-      total: this.services.length,
+      total: serviceEntries.length,
       successful: results.filter((r) => r.status === "fulfilled").length,
       failed: results.filter((r) => r.status === "rejected").length,
-      failedServices: results
-        .map<IServiceHealthSummaryItem>((r, index) => ({
-          isHealthy: r.status === "fulfilled",
-          serviceName: this.services[index].name,
-          message: r.status === "rejected" ? r.reason.message : undefined,
-        }))
-        .filter((r) => !r.isHealthy),
+      failedServices: results.map<IServiceHealthSummaryItem>((r, index) => ({
+        isHealthy: r.status === "fulfilled",
+        serviceName: serviceEntries[index][0], // Use the enum key as the serviceName
+        message: r.status === "rejected" ? (r as PromiseRejectedResult).reason.message : undefined,
+      })).filter((r) => !r.isHealthy),
     };
 
     if (summary.failed) {
-      this.handleThrowError(`[connect] ${summary.failed}/${summary.total} services failed to launch`, summary.failedServices);
+      EssentialsService.handleThrowError(`[connect] ${summary.failed}/${summary.total} services failed to launch`, summary.failedServices);
     } else {
-      this.logger.success(`[connect] ${summary.successful}/${summary.total} services started successfully`);
+      EssentialsService.logger.success(`[connect] ${summary.successful}/${summary.total} services started successfully`);
     }
   };
 
   // TODO: any reason to remove services from the list?
   // if we don't, we can still use health and get "false" for all disconnected services
   public disconnect = async () => {
-    const results = await Promise.allSettled(this.services.map((s) => s.disconnect()));
+    const serviceEntries = Object.entries(EssentialsService.services).filter((entry): entry is [ESSENTIAL_SERVICE, IEssentialService] => entry[1] !== undefined);
+    const results = await Promise.allSettled(serviceEntries.map(([_, service]) => service.disconnect()));
 
     const summary = {
-      total: this.services.length,
+      total: serviceEntries.length,
       successful: results.filter((r) => r.status === "fulfilled").length,
       failed: results.filter((r) => r.status === "rejected").length,
-      failedServices: results
-        .map<IServiceHealthSummaryItem>((r, index) => ({
-          isHealthy: r.status === "fulfilled",
-          serviceName: this.services[index].name,
-          message: r.status === "rejected" ? r.reason.message : undefined,
-        }))
-        .filter((r) => !r.isHealthy),
+      failedServices: results.map<IServiceHealthSummaryItem>((r, index) => ({
+        isHealthy: r.status === "fulfilled",
+        serviceName: serviceEntries[index][0], // Use the enum key as the serviceName
+        message: r.status === "rejected" ? (r as PromiseRejectedResult).reason.message : undefined,
+      })).filter((r) => !r.isHealthy),
     };
 
     if (summary.failed) {
-      this.logger.error(`[disconnect] ${summary.failed}/${summary.total} services failed to stop gracefully`, summary.failedServices);
+      EssentialsService.logger.error(`[disconnect] ${summary.failed}/${summary.total} services failed to stop gracefully`, summary.failedServices);
     } else {
-      this.logger.success(`[disconnect] ${summary.successful}/${summary.total} services stopped gracefully`);
+      EssentialsService.logger.success(`[disconnect] ${summary.successful}/${summary.total} services stopped gracefully`);
     }
   };
 
   public health = async (): Promise<IServiceHealthResponse> => {
     const summary = await this.createHealthSummary();
-    this.logger.debug(summary);
+    EssentialsService.logger.debug(summary);
 
     return { isHealthy: !summary.unhealthyCount, extra: summary };
   };
@@ -76,15 +74,20 @@ export class EssentialsService implements IEssentialService {
   private createHealthSummary = async (): Promise<IHealthSummary> => {
     let unhealthyCount = 0;
 
-    const details = await Promise.all(this.services.map<Promise<IServiceHealthSummaryItem>>(async (s) => {
-      const { isHealthy } = await s.health();
-      if (!isHealthy) unhealthyCount++;
+    const serviceEntries = Object.entries(EssentialsService.services)
+      .filter((entry): entry is [ESSENTIAL_SERVICE, IEssentialService] => entry[1] !== undefined);
 
-      return {
-        isHealthy,
-        serviceName: s.name,
-      };
-    }));
+    const details = await Promise.all(
+      serviceEntries.map<Promise<IServiceHealthSummaryItem>>(async ([serviceName, service]) => {
+        const { isHealthy } = await service.health();
+        if (!isHealthy) unhealthyCount++;
+
+        return {
+          isHealthy,
+          serviceName,
+        };
+      }),
+    );
 
     return {
       unhealthyCount,
@@ -92,8 +95,22 @@ export class EssentialsService implements IEssentialService {
     };
   };
 
-  private handleThrowError(message: string, extra?: any): void {
-    this.logger.error(message, extra);
+  public static getRabbitMq = (): RabbitMqService => {
+    const service = EssentialsService.services[ESSENTIAL_SERVICE.RABBITMQ];
+    if (!service) EssentialsService.handleThrowError("[getRabbitMq] Service is not initialized");
+
+    if (!(service instanceof RabbitMqService)) this.handleThrowError("[getRabbitMq] Service is not an instance of RabbitMqService");
+
+    return service;
+  };
+
+  private static handleThrowError(message: string, extra?: any): never {
+    if (extra) {
+      this.logger.error(message, extra);
+    } else {
+      this.logger.error(message);
+    }
+
     throw new Error(message);
   }
 }
