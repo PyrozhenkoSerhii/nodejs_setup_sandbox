@@ -26,7 +26,7 @@ class Main {
         this.logger.success(`Express is running on ${coreConfig.port} port`);
       });
     } catch (error) {
-      this.logger.error("[initialize] Critical error occurred. Existing");
+      this.logger.error("[initialize] Critical error occurred. Existing", error);
       process.exit(1);
     }
   };

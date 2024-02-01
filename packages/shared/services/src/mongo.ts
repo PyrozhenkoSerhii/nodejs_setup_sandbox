@@ -46,7 +46,7 @@ export class MongoService implements IEssentialService {
         },
       );
     } catch (error) {
-      this.handleThrowError("Error while establishing a connection");
+      this.handleThrowError("Error while establishing a connection", error);
     }
   };
 
