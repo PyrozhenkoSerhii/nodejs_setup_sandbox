@@ -1,21 +1,27 @@
+import { EventEmitter } from "stream";
+
 import amqplib, { Options } from "amqplib";
 
-import { coreConfig, getRabbitConfig } from "@shared/configs";
-import { ENVIRONMENT, ESSENTIAL_SERVICE, IEssentialService, IServiceHealthResponse } from "@shared/interfaces";
+import { coreConfig, getRabbitConfig, livenessConfig } from "@shared/configs";
+import { ENVIRONMENT, ESSENTIAL_SERVICE_EVENT, ESSENTIAL_SERVICE_HEALTH, ESSENTIAL_SERVICE_NAME, IEssentialService } from "@shared/interfaces";
 import { Logger, retry } from "@shared/utils";
 
-export class RabbitMqService implements IEssentialService {
-  private readonly logger = new Logger(ESSENTIAL_SERVICE.RABBITMQ, "debug");
+export class RabbitMqService extends EventEmitter implements IEssentialService {
+  private readonly logger = new Logger(ESSENTIAL_SERVICE_NAME.RABBITMQ, "debug");
 
-  public readonly config = getRabbitConfig();
+  private readonly config = getRabbitConfig();
 
-  public readonly connectOptions: Options.Connect;
+  private readonly connectOptions: Options.Connect;
 
   private connection: amqplib.Connection|null = null;
 
-  private isHealthy = false;
+  private health = ESSENTIAL_SERVICE_HEALTH.NOT_INITIALIZED;
+
+  private livelinessTimeout: NodeJS.Timeout|null = null;
 
   constructor() {
+    super();
+
     const protocol = coreConfig.env === ENVIRONMENT.LOCAL ? "amqp" : "amqps";
 
     const { user, password, host, port, vhost, queueType, queues, healthCheckSeconds } = this.config;
@@ -35,18 +41,16 @@ export class RabbitMqService implements IEssentialService {
     this.logger.info("Got the RabbitMQ config: ", { host, port, user, vhost, queueType, queues, healthCheckSeconds });
   }
 
-  public health = async (): Promise<IServiceHealthResponse> => {
-    return { isHealthy: this.isHealthy };
-  };
-
-  public connect = async (attempts = 6) => {
+  public connect = async (isReconnect = false, attempts = 5, interval = 100, multiplier = 1.5) => {
     try {
+      this.logger.info("Trying to connect");
+
       await retry(
         attempts,
-        1000,
-        1.5,
+        interval, // aside from this interval, amqp will wait for "connectionTimeoutMs", see this.config
+        multiplier,
         async () => {
-          this.connection = await amqplib.connect(this.connectOptions);
+          this.connection = await amqplib.connect(this.connectOptions, { timeout: this.config.connectionTimeoutMs });
           this.subscribeToEvents();
           this.onConnected();
         },
@@ -56,12 +60,15 @@ export class RabbitMqService implements IEssentialService {
 
       );
     } catch (error) {
-      this.handleThrowError("Error while establishing a connection", error);
+      if (!isReconnect) {
+        this.handleThrowError("Error while establishing a connection", error);
+      }
     }
   };
 
   public disconnect = async () => {
     try {
+      this.onHealth(ESSENTIAL_SERVICE_HEALTH.STOPPED);
       await this.clearConnection(true, true);
     } catch (error) {
       this.handleThrowError("Error while disconnecting");
@@ -83,15 +90,19 @@ export class RabbitMqService implements IEssentialService {
   };
 
   private onConnected = () => {
-    this.isHealthy = true;
+    this.onHealth(ESSENTIAL_SERVICE_HEALTH.GOOD);
+    this.cancelLivelinessTimeout();
     this.logger.info("[onConnected] event");
   };
 
   private onDisconnected = () => {
     try {
+      this.onHealth(ESSENTIAL_SERVICE_HEALTH.BAD);
+      this.setupLivelinessTimeout();
       this.logger.error("[onDisconnected] event");
+      // manual reconnect cycle
       this.clearConnection(false);
-      this.connect(12);
+      this.connect(true, 10, 1000, 1.5);
     } catch (error) {
       this.logger.error("[onDisconnected] event [catch] ERROR:", error);
     }
@@ -102,9 +113,12 @@ export class RabbitMqService implements IEssentialService {
       // TODO: these should be addressed with care and depending on what
       // errors were actually getting
       // For now, we assume that all of those are critical and trying to reconnect
+      this.onHealth(ESSENTIAL_SERVICE_HEALTH.BAD);
+      this.setupLivelinessTimeout();
       this.logger.error("[onUnexpectedError] event. Actual error: ", error);
+      // manual reconnect cycle
       this.clearConnection(true);
-      this.connect(12);
+      this.connect(true, 10, 1000, 1.5);
     } catch (error) {
       this.logger.error("[onUnexpectedError] event [catch] ERROR:", error);
     }
@@ -112,7 +126,6 @@ export class RabbitMqService implements IEssentialService {
 
   private clearConnection = async (manualClose = false, shouldThrow = false) => {
     try {
-      this.isHealthy = false;
       this.unsubscribeFromEvents();
       if (this.connection && manualClose) {
         await this.connection.close();
@@ -124,6 +137,27 @@ export class RabbitMqService implements IEssentialService {
       this.connection = null;
       this.logger.info("[clearConnection] Ensure closed connection");
     }
+  };
+
+  private setupLivelinessTimeout = () => {
+    const timeout = livenessConfig.default.server.RabbitMqService.maxReconnectMs;
+    this.logger.warn(`[setupLivelinessTimeout] The service will become critical in ${timeout}ms`);
+    this.livelinessTimeout = setTimeout(() => {
+      this.logger.error("[setupLivelinessTimeout] [callback] The health is critical!");
+      this.onHealth(ESSENTIAL_SERVICE_HEALTH.CRITICAL);
+    }, timeout);
+  };
+
+  private cancelLivelinessTimeout = () => {
+    if (this.livelinessTimeout) {
+      clearTimeout(this.livelinessTimeout);
+      this.logger.info("[cancelLivelinessTimeout]");
+    }
+  };
+
+  private onHealth = (health: ESSENTIAL_SERVICE_HEALTH) => {
+    this.health = health;
+    this.emit(ESSENTIAL_SERVICE_EVENT.HEALTH_CHANGE, this.health);
   };
 
   private handleThrowError(message: string, extra?: any): void {

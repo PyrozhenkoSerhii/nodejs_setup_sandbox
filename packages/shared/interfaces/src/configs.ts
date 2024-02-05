@@ -6,9 +6,20 @@ export enum ENVIRONMENT {
   PROD="prod"
 }
 
-export enum ESSENTIAL_SERVICE {
+export enum APP_NAME {
+  SERVER="server"
+}
+
+export enum ESSENTIAL_SERVICE_NAME {
   MONGODB="MongoDBService",
   RABBITMQ="RabbitMqService"
+}
+
+export interface ICoreConfig {
+  port: number;
+  env: ENVIRONMENT;
+  appName: string;
+  allowedNodeIp: string;
 }
 
 interface IBaseServiceConfig {
@@ -30,11 +41,5 @@ export interface IRabbitConfig extends IBaseServiceConfig {
     test: string;
   };
   healthCheckSeconds: number;
-}
-
-export interface ICoreConfig {
-  port: number;
-  env: ENVIRONMENT;
-  serverName: string;
-  allowedNodeIp: string;
+  connectionTimeoutMs: number;
 }
