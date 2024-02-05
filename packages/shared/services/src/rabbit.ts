@@ -75,6 +75,10 @@ export class RabbitMqService extends EventEmitter implements IEssentialService {
     }
   };
 
+  public onFailure = () => {
+    // TODO: come up with a strategy and implement it
+  };
+
   private subscribeToEvents = () => {
     if (!this.connection) return;
 

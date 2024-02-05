@@ -14,4 +14,9 @@ export interface IEssentialService {
   connect(): Promise<void>;
   disconnect(): Promise<void>;
   on(event: ESSENTIAL_SERVICE_EVENT.HEALTH_CHANGE, listener: (health: ESSENTIAL_SERVICE_HEALTH) => void): this;
+  /**
+   * The method is used when the service is unreachable to provide the tasks for execution
+   * They should be executed as soon as the service is healthy again
+   */
+  onFailure(task: any): void
 }

@@ -3,6 +3,7 @@ import { EventEmitter } from "stream";
 import { ESSENTIAL_SERVICE_NAME, ESSENTIAL_SERVICE_EVENT, ESSENTIAL_SERVICE_HEALTH, IEssentialService } from "@shared/interfaces";
 import { Logger } from "@shared/utils";
 
+import { MongoService } from "./mongo";
 import { RabbitMqService } from "./rabbit";
 
 type IServicesMap = { [key in ESSENTIAL_SERVICE_NAME]?: IEssentialService };
@@ -94,11 +95,23 @@ export class ServiceLocator extends EventEmitter {
   /**
    * @returns a RabbitMQ instance that can be used to create a channel, etc
    */
-  public static getRabbitMq = (): RabbitMqService => {
+  public static getRabbitMQ = (): RabbitMqService => {
     const service = ServiceLocator.services[ESSENTIAL_SERVICE_NAME.RABBITMQ];
     if (!service) ServiceLocator.handleThrowError("[getRabbitMq] Service is not initialized");
 
     if (!(service instanceof RabbitMqService)) ServiceLocator.handleThrowError("[getRabbitMq] Service is not an instance of RabbitMqService");
+
+    return service;
+  };
+
+  /**
+   * @returns a MongoDB instance if needed
+   */
+  public static getMongoDB = (): MongoService => {
+    const service = ServiceLocator.services[ESSENTIAL_SERVICE_NAME.MONGODB];
+    if (!service) ServiceLocator.handleThrowError("[getMongoDB] Service is not initialized");
+
+    if (!(service instanceof MongoService)) ServiceLocator.handleThrowError("[getMongoDB] Service is not an instance of MongoService");
 
     return service;
   };

@@ -62,6 +62,10 @@ export class MongoService extends EventEmitter implements IEssentialService {
     }
   };
 
+  public onFailure = () => {
+    // TODO: come up with a strategy and implement it
+  };
+
   private subscribeToEvents = () => {
     mongoose.connection.on("connected", this.onConnected);
     mongoose.connection.on("disconnected", this.onDisconnected);
