@@ -3,7 +3,7 @@ import { ServiceLocator } from "./service-locator";
 export class UsageTestService {
   public static serviceInstanceGetterTest = async () => {
     try {
-      const instance = ServiceLocator.getRabbitMq();
+      const instance = ServiceLocator.getRabbitMQ();
       console.log(">> events of rabbitmq instance (checking the getter function): ", instance.eventNames());
     } catch (error) {
       console.error("Wasn't able to get an instance");
