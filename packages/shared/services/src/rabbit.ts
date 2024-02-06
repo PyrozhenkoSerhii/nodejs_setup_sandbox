@@ -15,6 +15,10 @@ export class RabbitMqService extends EventEmitter implements IEssentialService {
 
   private connection: amqplib.Connection|null = null;
 
+  private channel: amqplib.Channel|null = null;
+
+  private assertedQueues: Set<string> = new Set();
+
   private health = ESSENTIAL_SERVICE_HEALTH.NOT_INITIALIZED;
 
   private livelinessTimeout: NodeJS.Timeout|null = null;
@@ -51,6 +55,7 @@ export class RabbitMqService extends EventEmitter implements IEssentialService {
         multiplier,
         async () => {
           this.connection = await amqplib.connect(this.connectOptions, { timeout: this.config.connectionTimeoutMs });
+          this.channel = await this.connection.createChannel();
           this.subscribeToEvents();
           this.onConnected();
         },
@@ -131,6 +136,10 @@ export class RabbitMqService extends EventEmitter implements IEssentialService {
   private clearConnection = async (manualClose = false, shouldThrow = false) => {
     try {
       this.unsubscribeFromEvents();
+      if (this.channel) {
+        await this.channel.close();
+      }
+
       if (this.connection && manualClose) {
         await this.connection.close();
       }
@@ -164,7 +173,59 @@ export class RabbitMqService extends EventEmitter implements IEssentialService {
     this.emit(ESSENTIAL_SERVICE_EVENT.HEALTH_CHANGE, this.health);
   };
 
-  private handleThrowError(message: string, extra?: any): void {
+  // TODO: handle failed messages, tie them to the reconnect logic and ttl
+  public publishMessage = async (queueName: string, data: any): Promise<boolean> => {
+    try {
+      if (!this.channel) this.handleThrowError("Unexpected RabbitMQ service state. No channel found");
+
+      await this.ensureQueue(queueName);
+      this.channel.sendToQueue(queueName, this.createBufferFromObject(data));
+      return true;
+    } catch (error) {
+      this.logger.error("[publishMessage] Failed", error);
+      return false;
+    }
+  };
+
+  async createSubscriber(queueName: string, maxProcessing: string, onMessage: (msg: amqplib.ConsumeMessage | null) => void): Promise<boolean> {
+    try {
+      if (!this.channel) this.handleThrowError("Unexpected RabbitMQ service state. No channel found");
+
+      await this.ensureQueue(queueName);
+
+      this.channel.consume(queueName, (message) => {
+        if (!message || !message.content) return;
+
+        onMessage(message);
+        if (message) {
+          this.channel?.ack(message);
+        }
+      }, { noAck: false });
+    } catch (error) {
+      this.logger.error("[createSubscriber] Failed", error);
+      return false;
+    }
+  }
+
+  private ensureQueue = async (queueName: string) => {
+    if (!this.channel) this.handleThrowError("Unexpected RabbitMQ service state. No channel found");
+
+    if (this.assertedQueues.has(queueName)) return;
+
+    await this.channel.assertQueue(queueName, {
+      durable: true,
+      arguments: {
+        "x-queue-type": this.config.queueType,
+      },
+    });
+    this.assertedQueues.add(queueName);
+  };
+
+  private createBufferFromObject = (obj: any): Buffer => {
+    return Buffer.from(JSON.stringify(obj));
+  };
+
+  private handleThrowError(message: string, extra: any = ""): never {
     this.logger.error(message, extra);
     throw new Error(message);
   }

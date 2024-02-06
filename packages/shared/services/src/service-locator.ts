@@ -116,12 +116,8 @@ export class ServiceLocator extends EventEmitter {
     return service;
   };
 
-  private static handleThrowError(message: string, extra?: any): never {
-    if (extra) {
-      ServiceLocator.logger.error(message, extra);
-    } else {
-      ServiceLocator.logger.error(message);
-    }
+  private static handleThrowError(message: string, extra: any = ""): never {
+    ServiceLocator.logger.error(message, extra);
 
     throw new Error(message);
   }

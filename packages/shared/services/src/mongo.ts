@@ -128,7 +128,7 @@ export class MongoService extends EventEmitter implements IEssentialService {
     this.emit(ESSENTIAL_SERVICE_EVENT.HEALTH_CHANGE, this.health);
   };
 
-  private handleThrowError(message: string, extra?: any): void {
+  private handleThrowError(message: string, extra: any = ""): void {
     this.logger.error(message, extra);
     throw new Error(message);
   }
