@@ -34,17 +34,22 @@ export interface IMongoConfig extends IBaseServiceConfig {
   options: mongoose.ConnectOptions;
 }
 
+export type RABBIT_QUEUE_NAME = "TEST"|"TEST2";
+
 export interface IRabbitConfig extends IBaseServiceConfig {
   vhost: string;
   queueType: string;
   queues: {
-    test: string;
+    [key in RABBIT_QUEUE_NAME]: string;
   };
+  queuesTTL: {
+    [key in RABBIT_QUEUE_NAME]: number;
+  }
   healthCheckSeconds: number;
   connectionTimeoutMs: number;
   dlx: {
     exchangeName: string;
     queueName: string;
     routingKey: string;
-  }
+  },
 }

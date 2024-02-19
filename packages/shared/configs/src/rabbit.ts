@@ -11,7 +11,12 @@ export const getRabbitConfig = (): IRabbitConfig => ({
   vhost: tryGetEnv("RABBITMQ_VHOST", ""),
   queueType: tryGetEnv("RABBITMQ_QUEUE_TYPE", ""),
   queues: {
-    test: `test_${coreConfig.env}`,
+    TEST: `${coreConfig.env}_test`,
+    TEST2: `${coreConfig.env}_test2`,
+  },
+  queuesTTL: {
+    TEST: 5 * 60 * 1000, // 5 minutes
+    TEST2: 10 * 60 * 1000, // 10 minutes
   },
   // https://www.rabbitmq.com/heartbeats.html
   healthCheckSeconds: 5, // [5;20] are optimal, <5 will likely to cause false positives
