@@ -15,7 +15,13 @@ export class RabbitMqService extends EventEmitter implements IEssentialService {
 
   private connection: amqplib.Connection|null = null;
 
-  private channel: amqplib.Channel|null = null;
+  // the channel that is used for publishing messages and DLX
+  private mainChannel: amqplib.Channel|null = null;
+
+  // channels that are used for separate consumers = queues
+  private subscriberChannels: {[queueName: string]: amqplib.Channel} = {};
+
+  private messageBuffer: Array<{ queueName: string, message: any; expiresAt: number }> = [];
 
   private assertedQueues: Set<string> = new Set();
 
@@ -55,7 +61,8 @@ export class RabbitMqService extends EventEmitter implements IEssentialService {
         multiplier,
         async () => {
           this.connection = await amqplib.connect(this.connectOptions, { timeout: this.config.connectionTimeoutMs });
-          this.channel = await this.connection.createChannel();
+          this.mainChannel = await this.connection.createChannel();
+          this.setupDLX();
           this.subscribeToEvents();
           this.onConnected();
         },
@@ -102,6 +109,15 @@ export class RabbitMqService extends EventEmitter implements IEssentialService {
     this.onHealth(ESSENTIAL_SERVICE_HEALTH.GOOD);
     this.cancelLivelinessTimeout();
     this.logger.info("[onConnected] event");
+    if (this.messageBuffer.length) {
+      const now = Date.now();
+      const relevantMessages = this.messageBuffer.filter((m) => m.expiresAt > now); // TODO: consider adding some constant to account for processing time or account for it in ttl already
+      this.logger.info(`[onConnected] Got ${this.messageBuffer.length} messages in buffer. ${relevantMessages.length} are relevant`);
+
+      relevantMessages.forEach((m) => {
+        this.publishMessage(m.queueName, m.message, undefined); // not retrying anymore
+      });
+    }
   };
 
   private onDisconnected = () => {
@@ -136,9 +152,19 @@ export class RabbitMqService extends EventEmitter implements IEssentialService {
   private clearConnection = async (manualClose = false, shouldThrow = false) => {
     try {
       this.unsubscribeFromEvents();
-      if (this.channel) {
-        await this.channel.close();
+      if (this.mainChannel) {
+        await this.mainChannel.close();
       }
+
+      await Promise.all(Object.keys(this.subscriberChannels).map(async (key) => {
+        if (this.subscriberChannels[key]) {
+          try {
+            return await this.subscriberChannels[key].close();
+          } catch (error) {
+            this.logger.error(`[clearConnection] Error while closing the subscriber channel "${key}"`);
+          }
+        }
+      }));
 
       if (this.connection && manualClose) {
         await this.connection.close();
@@ -174,45 +200,81 @@ export class RabbitMqService extends EventEmitter implements IEssentialService {
   };
 
   // TODO: handle failed messages, tie them to the reconnect logic and ttl
-  public publishMessage = async (queueName: string, data: any): Promise<boolean> => {
+  public publishMessage = async (queueName: string, data: any, ttl?: number): Promise<boolean> => {
     try {
-      if (!this.channel) this.handleThrowError("Unexpected RabbitMQ service state. No channel found");
+      if (!this.mainChannel) this.handleThrowError("Unexpected RabbitMQ service state. No channel found");
 
-      await this.ensureQueue(queueName);
-      this.channel.sendToQueue(queueName, this.createBufferFromObject(data));
+      if (this.health !== ESSENTIAL_SERVICE_HEALTH.GOOD) this.handleThrowError(`The service is unhealthy (${this.health}), can't schedule a message`);
+
+      await this.ensureMainQueue(queueName);
+      this.mainChannel.sendToQueue(queueName, this.createBufferFromObject(data));
       return true;
     } catch (error) {
       this.logger.error("[publishMessage] Failed", error);
+
+      if (ttl) {
+        this.messageBuffer.push({ queueName, message: data, expiresAt: Date.now() + ttl });
+        this.logger.warn(`Added new message to the buffer with ttl ${ttl}`);
+      }
+
       return false;
     }
   };
 
-  async createSubscriber(queueName: string, maxProcessing: string, onMessage: (msg: amqplib.ConsumeMessage | null) => void): Promise<boolean> {
+  public createSubscriber = async (queueName: string, maxProcessing: number, onMessage: (msg: amqplib.ConsumeMessage | null) => Promise<void>): Promise<boolean> => {
     try {
-      if (!this.channel) this.handleThrowError("Unexpected RabbitMQ service state. No channel found");
+      if (!this.connection) this.handleThrowError("Unexpected RabbitMQ service state. No connection found");
 
-      await this.ensureQueue(queueName);
+      const subscriberChannel = await this.connection.createChannel();
+      // setting the max amount of the unacknowledged messages on the channel
+      // if everything is okay, the channel should ack() the message
+      // you should nack() with requeue if the error is recoverable (TODO: need more info about the error happened in onMessage())
+      // you should nack() without requeue and send message to DLX if the error is fatal
+      subscriberChannel.prefetch(maxProcessing);
+      await subscriberChannel.assertQueue(queueName, {
+        durable: true,
+        arguments: {
+          "x-queue-type": this.config.queueType,
+          "x-dead-letter-exchange": this.config.dlx.exchangeName,
+          "x-dead-letter-routing-key": this.config.dlx.routingKey,
+        },
+      });
 
-      this.channel.consume(queueName, (message) => {
-        if (!message || !message.content) return;
+      subscriberChannel.consume(queueName, async (message) => {
+        if (!message?.content) return;
 
-        onMessage(message);
-        if (message) {
-          this.channel?.ack(message);
+        try {
+          await onMessage(message);
+          subscriberChannel.ack(message);
+        } catch (error) {
+          // TODO: depending on the actual error from the onMessage() we may consider adjusting "requeue" variable
+          const requeue = false;
+          subscriberChannel.nack(message, false, requeue);
+          this.logger.error(`Error while handling the message for "${queueName}" queue`, error);
         }
       }, { noAck: false });
+
+      return true;
     } catch (error) {
       this.logger.error("[createSubscriber] Failed", error);
       return false;
     }
-  }
+  };
 
-  private ensureQueue = async (queueName: string) => {
-    if (!this.channel) this.handleThrowError("Unexpected RabbitMQ service state. No channel found");
+  private setupDLX = async () => {
+    if (!this.mainChannel) this.handleThrowError("Unexpected RabbitMQ service state. No publisher channel found");
+
+    await this.mainChannel.assertExchange(this.config.dlx.exchangeName, "direct", { durable: true });
+    await this.mainChannel.assertQueue(this.config.dlx.queueName, { durable: true });
+    await this.mainChannel.bindQueue(this.config.dlx.queueName, this.config.dlx.exchangeName, "#");
+  };
+
+  private ensureMainQueue = async (queueName: string) => {
+    if (!this.mainChannel) this.handleThrowError("Unexpected RabbitMQ service state. No publisher channel found");
 
     if (this.assertedQueues.has(queueName)) return;
 
-    await this.channel.assertQueue(queueName, {
+    await this.mainChannel.assertQueue(queueName, {
       durable: true,
       arguments: {
         "x-queue-type": this.config.queueType,

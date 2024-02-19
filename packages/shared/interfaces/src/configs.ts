@@ -42,4 +42,9 @@ export interface IRabbitConfig extends IBaseServiceConfig {
   };
   healthCheckSeconds: number;
   connectionTimeoutMs: number;
+  dlx: {
+    exchangeName: string;
+    queueName: string;
+    routingKey: string;
+  }
 }
