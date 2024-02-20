@@ -9,10 +9,10 @@ export const getRabbitConfig = (): IRabbitConfig => ({
   host: tryGetEnv("RABBITMQ_HOST"),
   port: +tryGetEnv("RABBITMQ_PORT"),
   vhost: tryGetEnv("RABBITMQ_VHOST", ""),
-  queueType: tryGetEnv("RABBITMQ_QUEUE_TYPE", ""),
+  queueType: tryGetEnv("RABBITMQ_QUEUE_TYPE", "") || undefined,
   queues: {
-    TEST: `${coreConfig.env}_test`,
-    TEST2: `${coreConfig.env}_test2`,
+    TEST: `test_${coreConfig.env}`,
+    TEST2: `test2_${coreConfig.env}`,
   },
   queuesTTL: {
     TEST: 5 * 60 * 1000, // 5 minutes
@@ -22,8 +22,8 @@ export const getRabbitConfig = (): IRabbitConfig => ({
   healthCheckSeconds: 5, // [5;20] are optimal, <5 will likely to cause false positives
   connectionTimeoutMs: 1000, // for how long the amqplib will be waiting for connection establishment before timing out
   dlx: {
-    exchangeName: "my.dlx",
-    queueName: "dead-letter-queue",
+    exchangeName: `my.dlx_${coreConfig.env}`,
+    queueName: `dead-letter-queue_${coreConfig.env}`,
     routingKey: "#", // Using '#' for routing key to accept all messages
   },
 });

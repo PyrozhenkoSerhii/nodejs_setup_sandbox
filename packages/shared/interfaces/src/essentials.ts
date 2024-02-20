@@ -18,5 +18,6 @@ export interface IEssentialService {
    * The method is used when the service is unreachable to provide the tasks for execution
    * They should be executed as soon as the service is healthy again
    */
-  onFailure(...task: any): void
+  onFailure(...task: any): void;
+  getPublicInstance(): any;
 }

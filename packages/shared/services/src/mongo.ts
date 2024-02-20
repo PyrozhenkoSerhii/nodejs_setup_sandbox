@@ -6,6 +6,10 @@ import { getMongoConfig, livenessConfig } from "@shared/configs";
 import { ESSENTIAL_SERVICE_NAME, ESSENTIAL_SERVICE_EVENT, ESSENTIAL_SERVICE_HEALTH, IEssentialService } from "@shared/interfaces";
 import { Logger, retry } from "@shared/utils";
 
+export interface IMongoServicePublic {
+
+}
+
 export class MongoService extends EventEmitter implements IEssentialService {
   private readonly logger = new Logger(ESSENTIAL_SERVICE_NAME.MONGODB, "debug");
 
@@ -28,6 +32,14 @@ export class MongoService extends EventEmitter implements IEssentialService {
 
     this.logger.info("Got the MongoDB config: ", { user, host, port, db });
   }
+
+  /**
+   * The method that is used by Service Locator to get only
+   * those methods that should be available to others
+   */
+  public getPublicInstance = (): IMongoServicePublic => {
+    return {};
+  };
 
   public connect = async () => {
     try {

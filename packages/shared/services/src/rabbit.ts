@@ -3,16 +3,22 @@ import { EventEmitter } from "stream";
 import amqplib, { Options } from "amqplib";
 
 import { coreConfig, getRabbitConfig, livenessConfig } from "@shared/configs";
-import { ENVIRONMENT, ESSENTIAL_SERVICE_EVENT, ESSENTIAL_SERVICE_HEALTH, ESSENTIAL_SERVICE_NAME, IEssentialService, IRabbitConfig, RABBIT_QUEUE_NAME } from "@shared/interfaces";
+import { ENVIRONMENT, ESSENTIAL_SERVICE_EVENT, ESSENTIAL_SERVICE_HEALTH, ESSENTIAL_SERVICE_NAME, IEssentialService, RABBIT_QUEUE_ALIAS } from "@shared/interfaces";
 import { Logger, retry } from "@shared/utils";
 
 interface IMessageData {
   message: any;
-  queueName: RABBIT_QUEUE_NAME;
+  queueAlias: RABBIT_QUEUE_ALIAS;
 }
 
 interface IFailedMessageData extends IMessageData {
   expiresAt: number;
+}
+
+export interface IRabbitMqServicePublic {
+  createSubscriber: (queueAlias: RABBIT_QUEUE_ALIAS, maxProcessing: number, onMessage: (msg: amqplib.ConsumeMessage | null) => Promise<void>) => Promise<boolean>
+  publishMessage: (data: IMessageData) => Promise<boolean>;
+  onFailure: (data: IFailedMessageData) => void;
 }
 
 export class RabbitMqService extends EventEmitter implements IEssentialService {
@@ -37,13 +43,13 @@ export class RabbitMqService extends EventEmitter implements IEssentialService {
    * The queues that are attached to the main channel for publishing messages
    * Used to reduce load by ensuring the queue only once
    */
-  private assertedQueues: Set<RABBIT_QUEUE_NAME> = new Set();
+  private assertedQueues: Set<RABBIT_QUEUE_ALIAS> = new Set();
 
   /**
    * The channels that are created for each separate queue
    * That is needed to allow us controlling prefetch (max unacked messages) per queue (which can be only 1 per channel)
    */
-  private subscriberChannels: {[queueName in RABBIT_QUEUE_NAME]?: amqplib.Channel} = {};
+  private subscriberChannels: {[queueAlias in RABBIT_QUEUE_ALIAS]?: amqplib.Channel} = {};
 
   /**
    * The buffer that is used for retry when publishing
@@ -57,7 +63,7 @@ export class RabbitMqService extends EventEmitter implements IEssentialService {
 
     const protocol = coreConfig.env === ENVIRONMENT.LOCAL ? "amqp" : "amqps";
 
-    const { user, password, host, port, vhost, queueType, queues, healthCheckSeconds } = this.config;
+    const { user, password, host, port, vhost, queueType, queues, healthCheckSeconds, dlx, connectionTimeoutMs, queuesTTL } = this.config;
 
     const vhostPart = vhost ? `/${vhost}` : "";
 
@@ -71,8 +77,20 @@ export class RabbitMqService extends EventEmitter implements IEssentialService {
       protocol,
     };
 
-    this.logger.info("Got the RabbitMQ config: ", { host, port, user, vhost, queueType, queues, healthCheckSeconds });
+    this.logger.info("Got the RabbitMQ config: ", { host, port, user, vhost, queueType, queues, healthCheckSeconds, dlx, connectionTimeoutMs, queuesTTL });
   }
+
+  /**
+   * The method that is used by Service Locator to get only
+   * those methods that should be available to others
+   */
+  public getPublicInstance = (): IRabbitMqServicePublic => {
+    return {
+      createSubscriber: this.createSubscriber,
+      publishMessage: this.publishMessage,
+      onFailure: this.onFailure,
+    };
+  };
 
   /**
    * Method used for both manual connection and further reconnects
@@ -91,8 +109,10 @@ export class RabbitMqService extends EventEmitter implements IEssentialService {
         multiplier,
         async () => {
           this.connection = await amqplib.connect(this.connectOptions, { timeout: this.config.connectionTimeoutMs });
+          this.logger.info("Connection created");
           this.mainChannel = await this.connection.createChannel();
-          this.setupDLX();
+          this.logger.info("Created main channel");
+          await this.setupDLX();
           this.subscribeToEvents();
           this.onConnected();
         },
@@ -134,6 +154,8 @@ export class RabbitMqService extends EventEmitter implements IEssentialService {
 
     this.connection.on("close", this.onDisconnected);
     this.connection.on("error", this.onUnexpectedError);
+
+    this.logger.info("Subscribed to events");
   };
 
   private unsubscribeFromEvents = () => {
@@ -160,7 +182,7 @@ export class RabbitMqService extends EventEmitter implements IEssentialService {
       this.logger.info(`[onConnected] Got ${this.messageBuffer.length} messages in buffer. ${relevantMessages.length} are relevant`);
 
       relevantMessages.forEach((m) => {
-        this.publishMessage({ queueName: m.queueName, message: m.message });
+        this.publishMessage({ queueAlias: m.queueAlias, message: m.message });
       });
     }
   };
@@ -203,10 +225,10 @@ export class RabbitMqService extends EventEmitter implements IEssentialService {
       }
 
       await Promise.all(Object.keys(this.subscriberChannels).map(async (key) => {
-        const queueName = key as RABBIT_QUEUE_NAME;
-        if (this.subscriberChannels[queueName]) {
+        const queueAlias = key as RABBIT_QUEUE_ALIAS;
+        if (this.subscriberChannels[queueAlias]) {
           try {
-            return await this.subscriberChannels[queueName]?.close();
+            return await this.subscriberChannels[queueAlias]?.close();
           } catch (error) {
             this.logger.error(`[clearConnection] Error while closing the subscriber channel "${key}"`);
           }
@@ -256,9 +278,9 @@ export class RabbitMqService extends EventEmitter implements IEssentialService {
 
       if (this.health !== ESSENTIAL_SERVICE_HEALTH.GOOD) this.handleThrowError(`[publishMessage] The service is unhealthy (${this.health}), can't schedule a message`);
 
-      await this.ensureMainQueue(data.queueName);
-      this.logger.debug(`Sent message to "${data.queueName}" queue`);
-      this.mainChannel.sendToQueue(data.queueName, this.createBufferFromObject(data.message));
+      await this.ensureMainQueue(data.queueAlias);
+
+      this.sendToQueue(this.mainChannel, data.queueAlias, data.message);
       return true;
     } catch (error) {
       // TODO: consider adding some "reason" maybe?
@@ -274,13 +296,16 @@ export class RabbitMqService extends EventEmitter implements IEssentialService {
    * All messages that are failed are sent to DLX queue for further logging
    * Node: it's important to ensure that "assertQueue" in createSubscriber() and ensureMainQueue() methods
    * have the same parameters during creation since there's no way of knowing where it will be created first
-   * @param queueName the name of the queue we need to listen to
+   * @param queueAlias the alias of the queue we need to listen to (the name is env based so we can't use it)
    * @param maxProcessing how many active processing are allowed at once (util onMessage() is resolved
    * @param onMessage the handler for the message
    * @returns true - if successfully subscribed, false - if got some error
    */
-  public createSubscriber = async (queueName: RABBIT_QUEUE_NAME, maxProcessing: number, onMessage: (msg: amqplib.ConsumeMessage | null) => Promise<void>): Promise<boolean> => {
+  public createSubscriber = async (queueAlias: RABBIT_QUEUE_ALIAS, maxProcessing: number, onMessage: (msg: amqplib.ConsumeMessage | null) => Promise<void>): Promise<boolean> => {
     try {
+      const queueName = this.config.queues[queueAlias];
+      const queueTTL = this.config.queuesTTL[queueAlias];
+
       if (!this.connection) this.handleThrowError("Unexpected RabbitMQ service state. No connection found");
 
       const subscriberChannel = await this.connection.createChannel();
@@ -295,7 +320,7 @@ export class RabbitMqService extends EventEmitter implements IEssentialService {
           "x-queue-type": this.config.queueType,
           "x-dead-letter-exchange": this.config.dlx.exchangeName,
           "x-dead-letter-routing-key": this.config.dlx.routingKey,
-          "x-message-ttl": this.config.queuesTTL[queueName],
+          "x-message-ttl": queueTTL,
         },
       });
 
@@ -303,7 +328,7 @@ export class RabbitMqService extends EventEmitter implements IEssentialService {
         if (!message?.content) return;
 
         try {
-          await onMessage(message);
+          await onMessage(JSON.parse(message.content.toString()));
           subscriberChannel.ack(message);
         } catch (error) {
           // TODO: depending on the actual error from the onMessage() we may consider adjusting "requeue" variable
@@ -312,6 +337,8 @@ export class RabbitMqService extends EventEmitter implements IEssentialService {
           this.logger.error(`Error while handling the message for "${queueName}" queue`, error);
         }
       }, { noAck: false });
+
+      this.logger.info(`[createSubscriber] New channel and queue for "${queueName}", tll: ${queueTTL}, prefetch: ${maxProcessing}`);
 
       return true;
     } catch (error) {
@@ -329,6 +356,8 @@ export class RabbitMqService extends EventEmitter implements IEssentialService {
     await this.mainChannel.assertExchange(this.config.dlx.exchangeName, "direct", { durable: true });
     await this.mainChannel.assertQueue(this.config.dlx.queueName, { durable: true });
     await this.mainChannel.bindQueue(this.config.dlx.queueName, this.config.dlx.exchangeName, "#");
+
+    this.logger.info("Set up the DLX with the following configs: ", this.config.dlx);
   };
 
   /**
@@ -337,10 +366,13 @@ export class RabbitMqService extends EventEmitter implements IEssentialService {
    * Node: it's important to ensure that "assertQueue" in createSubscriber() and ensureMainQueue() methods
    * have the same parameters during creation since there's no way of knowing where it will be created first
    */
-  private ensureMainQueue = async (queueName: RABBIT_QUEUE_NAME) => {
+  private ensureMainQueue = async (queueAlias: RABBIT_QUEUE_ALIAS) => {
     if (!this.mainChannel) this.handleThrowError("Unexpected RabbitMQ service state. No publisher channel found");
 
-    if (this.assertedQueues.has(queueName)) return;
+    if (this.assertedQueues.has(queueAlias)) return;
+
+    const queueName = this.config.queues[queueAlias];
+    const queueTTL = this.config.queuesTTL[queueAlias];
 
     await this.mainChannel.assertQueue(queueName, {
       durable: true,
@@ -348,10 +380,18 @@ export class RabbitMqService extends EventEmitter implements IEssentialService {
         "x-queue-type": this.config.queueType,
         "x-dead-letter-exchange": this.config.dlx.exchangeName,
         "x-dead-letter-routing-key": this.config.dlx.routingKey,
-        "x-message-ttl": this.config.queuesTTL[queueName],
+        "x-message-ttl": queueTTL,
       },
     });
-    this.assertedQueues.add(queueName);
+    this.assertedQueues.add(queueAlias);
+
+    this.logger.info(`[ensureMainQueue] Ensured "${queueName}" queue, ttl: ${queueTTL}`);
+  };
+
+  private sendToQueue = (channel: amqplib.Channel, queueAlias: RABBIT_QUEUE_ALIAS, message: any) => {
+    const queueName = this.config.queues[queueAlias];
+    channel.sendToQueue(queueName, this.createBufferFromObject(message));
+    this.logger.debug(`[sendToQueue] message to "${queueName}"`);
   };
 
   private createBufferFromObject = (obj: any): Buffer => {

@@ -3,8 +3,8 @@ import { EventEmitter } from "stream";
 import { ESSENTIAL_SERVICE_NAME, ESSENTIAL_SERVICE_EVENT, ESSENTIAL_SERVICE_HEALTH, IEssentialService } from "@shared/interfaces";
 import { Logger } from "@shared/utils";
 
-import { MongoService } from "./mongo";
-import { RabbitMqService } from "./rabbit";
+import { IMongoServicePublic, MongoService } from "./mongo";
+import { IRabbitMqServicePublic, RabbitMqService } from "./rabbit";
 
 type IServicesMap = { [key in ESSENTIAL_SERVICE_NAME]?: IEssentialService };
 
@@ -95,25 +95,25 @@ export class ServiceLocator extends EventEmitter {
   /**
    * @returns a RabbitMQ instance that can be used to create a channel, etc
    */
-  public static getRabbitMQ = (): RabbitMqService => {
+  public static getRabbitMQ = (): IRabbitMqServicePublic => {
     const service = ServiceLocator.services[ESSENTIAL_SERVICE_NAME.RABBITMQ];
     if (!service) ServiceLocator.handleThrowError("[getRabbitMq] Service is not initialized");
 
     if (!(service instanceof RabbitMqService)) ServiceLocator.handleThrowError("[getRabbitMq] Service is not an instance of RabbitMqService");
 
-    return service;
+    return service.getPublicInstance();
   };
 
   /**
    * @returns a MongoDB instance if needed
    */
-  public static getMongoDB = (): MongoService => {
+  public static getMongoDB = (): IMongoServicePublic => {
     const service = ServiceLocator.services[ESSENTIAL_SERVICE_NAME.MONGODB];
     if (!service) ServiceLocator.handleThrowError("[getMongoDB] Service is not initialized");
 
     if (!(service instanceof MongoService)) ServiceLocator.handleThrowError("[getMongoDB] Service is not an instance of MongoService");
 
-    return service;
+    return service.getPublicInstance();
   };
 
   private static handleThrowError(message: string, extra: any = ""): never {
