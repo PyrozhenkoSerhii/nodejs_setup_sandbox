@@ -22,6 +22,6 @@ export class UsageTestService {
   };
 }
 
-setTimeout(() => {
-  UsageTestService.serviceInstanceGetterTest();
-}, 5000);
+// setTimeout(() => {
+//   UsageTestService.serviceInstanceGetterTest();
+// }, 5000);

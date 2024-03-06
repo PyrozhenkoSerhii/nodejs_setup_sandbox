@@ -6,24 +6,26 @@ import { coreConfig } from "@shared/configs";
 import { PATH } from "@shared/constants";
 import { ESSENTIAL_SERVICE_NAME } from "@shared/interfaces";
 import { ServiceLocator, MongoService, RabbitMqService } from "@shared/services";
-import { Logger, checkRequestSource } from "@shared/utils";
+import { Logger, checkRequestSource, testLockFunctionality } from "@shared/utils";
+
+testLockFunctionality();
 
 class Main {
   private logger = new Logger(Main.name);
 
   public initialize = async () => {
     try {
-      ServiceLocator.addService(new MongoService(), ESSENTIAL_SERVICE_NAME.MONGODB);
-      ServiceLocator.addService(new RabbitMqService(), ESSENTIAL_SERVICE_NAME.RABBITMQ);
-      await ServiceLocator.connect();
+      // ServiceLocator.addService(new MongoService(), ESSENTIAL_SERVICE_NAME.MONGODB);
+      // ServiceLocator.addService(new RabbitMqService(), ESSENTIAL_SERVICE_NAME.RABBITMQ);
+      // await ServiceLocator.connect();
 
-      const app = express();
-      app.use(`/${PATH.HEALTH}`, this.onHealth);
-      app.use(`/${PATH.SHUTDOWN}`, checkRequestSource, this.onShutdown);
+      // const app = express();
+      // app.use(`/${PATH.HEALTH}`, this.onHealth);
+      // app.use(`/${PATH.SHUTDOWN}`, checkRequestSource, this.onShutdown);
 
-      app.listen(coreConfig.port, () => {
-        this.logger.success(`Express is running on ${coreConfig.port} port`);
-      });
+      // app.listen(coreConfig.port, () => {
+      //   this.logger.success(`Express is running on ${coreConfig.port} port`);
+      // });
     } catch (error) {
       this.logger.error("[initialize] Critical error occurred. Existing", error);
       process.exit(1);
