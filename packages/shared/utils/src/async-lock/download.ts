@@ -14,7 +14,6 @@ enum EDownloadEvents {
 }
 
 enum EDownloadStatus {
-  PENDING="pending",
   READY="ready",
   ERROR="error",
 }
@@ -30,7 +29,17 @@ export class DownloadService extends EventEmitter {
 
   private static eventEmitter = new EventEmitter();
 
-  public static async download(options: IDownloadHandlersOptions): Promise<IDownloadEventData> {
+  public static checkRedisUrl = (url: string): boolean => {
+    // Redis.get(process.pid + prefix + url);
+    return true;
+  };
+
+  public static setUrl = async () => {
+    // Redis.set(process.pid + prefix + url);
+    // Redis.setExpiration(process.pid + prefix + url)
+  };
+
+  public static async downloadFileOnDisk(options: IDownloadHandlersOptions): Promise<IDownloadEventData> {
     DownloadService.logger.success(`[download] [${options.operationId}] Started ${options.localUrl}`);
     await sleep(1000);
 
@@ -43,7 +52,7 @@ export class DownloadService extends EventEmitter {
         error,
       };
       DownloadService.eventEmitter.emit(EDownloadEvents.DOWNLOAD_STATUS, eventData);
-      return { localUrl: options.localUrl, status: EDownloadStatus.ERROR };
+      throw Error(JSON.stringify({ localUrl: options.localUrl, status: EDownloadStatus.ERROR, error }));
     }
 
     DownloadService.logger.info(`[download] [${options.operationId}] Finished ${options.localUrl}`);
@@ -52,6 +61,8 @@ export class DownloadService extends EventEmitter {
       localUrl: options.localUrl,
       status: EDownloadStatus.READY,
     };
+
+    await DownloadService.setUrl();
     DownloadService.eventEmitter.emit(EDownloadEvents.DOWNLOAD_STATUS, eventData);
 
     return { localUrl: options.localUrl, status: EDownloadStatus.READY };
